@@ -300,6 +300,11 @@ raster_t load_image_mem_builtin(uint8_t *raw_data, size_t size, const int mode)
 		im = load_fts_mem_raster(raw_data, size);
 		convert_image_frgb(&im, (const float *) im.f, mode);
 	}
+	else if (check_data_is_webp(raw_data, size))
+	{
+		// Decode WebP data with the dedicated SimpleWebP decoder
+		im = load_image_mem_libsimplewebp(raw_data, size, mode);
+	}
 	else
 		im = load_image_mem_libstb_image(raw_data, size, mode);
 

@@ -96,3 +96,8 @@ ttf2mesh:
 	only download ttf2mesh.[ch]
 	Comment out the "General OS selection definition" block
 	Comment out standard library includes in both files
+
+simplewebp:
+	https://github.com/MikuAuahDark/simplewebp
+	Jul 19, 2026
+	Prompt: Edit simplewebp.h to remove the allocator system and instead directly use malloc and free.

@@ -258,6 +258,7 @@ extern "C" {
 #include "libraries/libsndfile.h"	// used if RL_LIBSNDFILE is defined
 #include "libraries/libraw.h"		// used if RL_LIBRAW is defined
 #include "libraries/libjpeg.h"		// used if RL_LIBJPEG is defined
+#include "libraries/libsimplewebp.h"	// used if RL_IMAGE_FILE is defined
 #include "libraries/libstb_image.h"	// used if RL_IMAGE_FILE is defined
 #include "libraries/libstb_vorbis.h"	// used if RL_SOUND_FILE is defined
 #include "libraries/libminimp3.h"	// used if RL_SOUND_FILE is defined

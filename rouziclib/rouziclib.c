@@ -164,6 +164,7 @@
 #include "libraries/libsndfile.c"
 #include "libraries/libraw.c"
 #include "libraries/libjpeg.c"
+#include "libraries/libsimplewebp.c"
 #include "libraries/libstb_image.c"
 #include "libraries/libstb_vorbis.c"
 #include "libraries/libminimp3.c"
