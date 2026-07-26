@@ -277,7 +277,7 @@ cl_int init_cl_context(clctx_t *c, const int from_gl)
 	return ret;
 }
 
-void deinit_clctx(clctx_t *c, int deinit_kernel)
+static void deinit_clctx_internal(clctx_t *c, int deinit_kernel, int deinit_context)
 {
 	if (c==NULL)
 		return;
@@ -295,14 +295,22 @@ void deinit_clctx(clctx_t *c, int deinit_kernel)
 			clReleaseProgram(c->program);
 	}
 
-	// Release the queue and context after their child objects
+	// Release the queue after its child objects
 	if (c->command_queue)
 		clReleaseCommandQueue(c->command_queue);
-	if (c->context)
+
+	// Release the context except during final process shutdown
+	if (deinit_context && c->context)
 		clReleaseContext(c->context);
 
 	// Clear handles so the context can be initialised again safely
 	memset(c, 0, sizeof(*c));
+}
+
+void deinit_clctx(clctx_t *c, int deinit_kernel)
+{
+	// Fully release contexts used outside the final process shutdown path
+	deinit_clctx_internal(c, deinit_kernel, 1);
 }
 
 uint64_t cl_make_program_and_device_hash(clctx_t *c, const char *src, const char *compil_opt)
@@ -505,7 +513,7 @@ cl_int cl_make_srgb_tex()
 	return ret;
 }
 
-void deinit_fb_cl()
+static void deinit_fb_cl_internal(int deinit_context)
 {
 	// Finish queued work before releasing shared output resources
 	if (fb->clctx.command_queue)
@@ -521,7 +529,7 @@ void deinit_fb_cl()
 	}
 	#endif
 
-	// Release framebuffer memory objects before destroying their context
+	// Release framebuffer memory objects before clearing context state
 	if (fb->cl_srgb)
 		clReleaseMemObject(fb->cl_srgb);
 	if (fb->data_cl)
@@ -529,8 +537,8 @@ void deinit_fb_cl()
 	fb->cl_srgb = NULL;
 	fb->data_cl = NULL;
 
-	// Release program and context state so drawq_run can rebuild it later
-	deinit_clctx(&fb->clctx, 1);
+	// Release program and queue state and destroy the context when requested
+	deinit_clctx_internal(&fb->clctx, 1, deinit_context);
 	fb->drawq_run_init = 0;
 
 	#ifdef RL_OPENCL_GL
@@ -545,6 +553,18 @@ void deinit_fb_cl()
 	fb->opt_clfinish = 0;
 	fb->opt_glfinish = 0;
 	fb->opt_interop = 0;
+}
+
+void deinit_fb_cl()
+{
+	// Fully release OpenCL when another graphics mode may be initialised
+	deinit_fb_cl_internal(1);
+}
+
+void deinit_fb_cl_fast_exit()
+{
+	// Leave final context destruction to process termination to avoid driver stalls
+	deinit_fb_cl_internal(0);
 }
 
 cl_int init_fb_cl()

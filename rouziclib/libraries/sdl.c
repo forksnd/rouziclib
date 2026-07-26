@@ -804,9 +804,14 @@ static int sdl_graphics_init_mode()
 	return 1;
 }
 
-static void sdl_graphics_deinit_mode()
+static void sdl_graphics_deinit_mode(int fast_exit)
 {
 	int old_mode = fb->use_drawq;
+
+	#ifndef RL_OPENCL
+	// Suppress the unused shutdown-mode parameter without OpenCL support
+	(void) fast_exit;
+	#endif
 
 	// Stop software work before releasing its destination texture
 	if (old_mode==DRAWQ_MODE_SOFTWARE)
@@ -815,7 +820,13 @@ static void sdl_graphics_deinit_mode()
 	#ifdef RL_OPENCL
 	// Release OpenCL resources only when OpenCL owns them
 	if (old_mode==DRAWQ_MODE_OPENCL)
-		deinit_fb_cl();
+	{
+		// Avoid slow final context destruction while preserving full mode-switch teardown
+		if (fast_exit)
+			deinit_fb_cl_fast_exit();
+		else
+			deinit_fb_cl();
+	}
 	#endif
 
 	#ifdef RL_VULKAN
@@ -878,7 +889,7 @@ static int sdl_graphics_init_with_fallback(const char *caller)
 		// Tear down the failed mode before changing its window presentation API
 		failed_mode = fb->use_drawq;
 		fprintf_rl(stderr, "%s: draw queue mode %d failed to initialise, falling back\n", caller, failed_mode);
-		sdl_graphics_deinit_mode();
+		sdl_graphics_deinit_mode(0);
 		fb->r.use_frgb = use_frgb;
 		if (failed_mode==DRAWQ_MODE_DIRECT)
 			return 0;
@@ -933,7 +944,7 @@ int sdl_graphics_set_drawq_mode(int mode)
 	}
 
 	// Replace backend resources while retaining a compatible SDL window
-	sdl_graphics_deinit_mode();
+	sdl_graphics_deinit_mode(0);
 	fb->use_drawq = mode;
 	fb->r.use_frgb = use_frgb;
 	sdl_graphics_set_maxdim();
@@ -960,7 +971,7 @@ int sdl_graphics_set_drawq_mode(int mode)
 
 	// Tear down the partial target mode before restoring the previous mode
 	fprintf_rl(stderr, "sdl_graphics_set_drawq_mode(): draw queue mode %d failed to initialise, restoring mode %d\n", mode, old_mode);
-	sdl_graphics_deinit_mode();
+	sdl_graphics_deinit_mode(0);
 	fb->use_drawq = old_mode;
 	fb->r.use_frgb = use_frgb;
 	sdl_graphics_set_maxdim();
@@ -1473,7 +1484,7 @@ int sdl_toggle_borderless_fullscreen()
 void sdl_quit_actions()
 {
 	// Release the active graphics mode through the shared teardown path
-	sdl_graphics_deinit_mode();
+	sdl_graphics_deinit_mode(1);
 
 	#ifdef RL_VULKAN
 	// Release retained Vulkan objects before destroying their persistent window
