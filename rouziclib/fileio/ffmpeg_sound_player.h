@@ -14,7 +14,7 @@ typedef struct
 
 typedef struct
 {
-	volatile int thread_on;
+	volatile int thread_on, mode_stream;
 	int init;
 	char *path;
 	ffstream_t *stream;
@@ -24,11 +24,12 @@ typedef struct
 	int frame_as;
 	volatile double ts_req, speed, volume, vol0, vol1, ts_cb;
 	double duration;
+	uint64_t file_size;
 	double time_offset;	// offset to convert between callback sample time and timestamp
 	int ifr, is;	// frame index and sample index in that frame
 } audio_player_data_t;
 
-extern void audio_player_main(audio_player_data_t *data, char *path, double ts_req, double speed, double volume);
+extern void audio_player_main(audio_player_data_t *data, char *path, double ts_req, double speed, double volume, int mode_stream);
 extern void audio_player_callback(float *stream, audiosys_t *sys, int bus_index, audio_player_data_t *data);
 
 #endif

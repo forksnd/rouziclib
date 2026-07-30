@@ -268,10 +268,11 @@ static double audio_player_seek_preroll()
 
 int audio_player_load_thread(audio_player_data_t *data)
 {
-	int ip=-1, must_seek=0, ip0=-1, ip1=-1, prev_ip;
-	double ts_req=0., ts0=NAN, ts0_end=0., ts1=NAN, speed=1.;
+	int ip=-1, must_seek=0, ip0=-1, ip1=-1, prev_ip, mode_stream;
+	double ts_req=0., ts0=NAN, ts0_end=0., ts1=NAN, speed=1., duration, next_duration_check=0.;
 	ffframe_info_t info;
 	int ret=0, sample_count;
+	uint64_t file_size;
 	float *buf=NULL;
 	size_t buf_as=0, buf_pos=0;
 
@@ -283,6 +284,8 @@ loop_start:
 		// Read playback state
 		speed = data->speed;
 		ts_req = data->ts_req;
+		mode_stream = data->mode_stream;
+		duration = data->duration;
 
 		// Seek on discontinuities
 		if (speed < 0. || ts_req < ts0 || (ts_req > ts1 && isnan(ts1)==0) || (ts_req > 0. && isnan(ts1)))
@@ -298,6 +301,34 @@ loop_start:
 		}
 
 		rl_mutex_unlock(&data->mutex);
+
+		// Refresh growing audio streams when playback reaches the cached duration
+		if (mode_stream && (isfinite(duration)==0 || ts_req >= duration - 1.) && get_time_hr() >= next_duration_check)
+		{
+			double new_duration;
+
+			next_duration_check = get_time_hr() + 1.;
+			new_duration = ff_get_audio_duration(NULL, data->path);
+			file_size = get_file_size(data->path);
+			if ((isfinite(new_duration) && (isfinite(duration)==0 || new_duration > duration)) || file_size > data->file_size)
+			{
+				ffstream_close_free(data->stream);
+
+				rl_mutex_lock(&data->mutex);
+				audio_player_clear_frames_no_lock(data);
+				data->duration = isfinite(new_duration) && (isfinite(duration)==0 || new_duration > duration) ? new_duration : duration;
+				data->file_size = file_size;
+				rl_mutex_unlock(&data->mutex);
+
+				ip = -1;
+				ts0 = NAN;
+				ts0_end = 0.;
+				ts1 = NAN;
+				must_seek = 1;
+				ip0 = -1;
+				ip1 = -1;
+			}
+		}
 
 		// Pause the loading if the frame to be replaced next is still needed
 		if (ts_req >= ts0 && ts_req < ts0_end && must_seek==0 && data->thread_on && circ_index(ip+1, data->frame_as)==ip0)
@@ -379,7 +410,7 @@ void audio_player_thread_exit(audio_player_data_t *data)
 	rl_mutex_unlock(&data->mutex);
 }
 
-void audio_player_main(audio_player_data_t *data, char *path, double ts_req, double speed, double volume)
+void audio_player_main(audio_player_data_t *data, char *path, double ts_req, double speed, double volume, int mode_stream)
 {
 	int start_thread=1, stop_thread=1, same_path=0, jump=0;
 
@@ -426,11 +457,13 @@ void audio_player_main(audio_player_data_t *data, char *path, double ts_req, dou
 		{
 			data->path = make_string_copy(path);
 			data->duration = ff_get_audio_duration(NULL, data->path);
+			data->file_size = get_file_size(data->path);
 		}
 
 		// Initialise playback state
 		audio_player_clear_frames_no_lock(data);
-		data->ts_req = rangelimit(ts_req - audio_player_seek_preroll(), 0., data->duration);
+		data->mode_stream = mode_stream;
+		data->ts_req = mode_stream ? MAXN(ts_req - audio_player_seek_preroll(), 0.) : rangelimit(ts_req - audio_player_seek_preroll(), 0., data->duration);
 		data->speed = speed;
 		data->volume = volume;
 		data->ifr = -1;
@@ -458,7 +491,8 @@ void audio_player_main(audio_player_data_t *data, char *path, double ts_req, dou
 	}
 	//data->time_offset = get_time_hr() - ts_req;
 
-	data->ts_req = rangelimit(ts_req - audio_player_seek_preroll(), 0., data->duration);
+	data->mode_stream = mode_stream;
+	data->ts_req = mode_stream ? MAXN(ts_req - audio_player_seek_preroll(), 0.) : rangelimit(ts_req - audio_player_seek_preroll(), 0., data->duration);
 	data->speed = speed;
 	data->volume = volume;
 
