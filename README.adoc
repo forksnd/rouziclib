@@ -598,7 +598,7 @@ OpenCL code for initialising a context, compiling a kernel and more. Relies on h
 SDL2 and SDL3 code to get display and driver information, handle various types of events, control the mouse cursor, initialise graphics and audio, use the clipboard, poll drag-and-drop file events. Also includes a function that serves as a program's main loop that calls a function you provide, with a structure to select features.
 
 ** link:rouziclib/libraries/vulkan.c[vulkan.c] / link:rouziclib/libraries/vulkan.h[vulkan.h] and link:rouziclib/libraries/vulkan_struct.h[vulkan_struct.h] +
-Aborted attempt to port my OpenCL system to Vulkan. Vulkan is rather complicated.
+Port my OpenCL system to Vulkan, all thanks to ChatGPT 5.6 Sol.
 
 ** link:rouziclib/libraries/clfft.c[clfft.c] / link:rouziclib/libraries/clfft.h[clfft.h] +
 Code for dealing with https://github.com/clMathLibraries/clFFT[clFFT].
