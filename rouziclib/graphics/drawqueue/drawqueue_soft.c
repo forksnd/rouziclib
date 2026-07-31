@@ -118,12 +118,12 @@ int drawq_soft_thread(drawq_soft_data_t *d)
 		chan_stride = sec_pix*sec_pix;
 		//sec_dim = rshift_xyi(d->r_dim, ss);			// 1920x1080 >> 4 = 120x67
 		sec_dim = ceil_rshift_xyi(d->r_dim, ss);		// 1920x1080 >> 4 = 120x68
-		brlvl = 0;			// bracket level
-
 		// Go through each sector
 		for (is.y=d->thread_id; is.y < sec_dim.y; is.y+=d->thread_count)
 			for (is.x=0; is.x < sec_dim.x; is.x++)
 			{
+				// Reset bracket state independently for each sector
+				brlvl = 0;
 				bpos = lshift_xyi(is, ss);
 				out_dim = min_xyi(sub_xyi(d->r_dim, bpos), set_xyi(sec_pix));
 
@@ -150,25 +150,32 @@ int drawq_soft_thread(drawq_soft_data_t *d)
 
 						switch (di[qi])				// type of the entry
 						{
-								case DQT_LINE_THIN_ADD:		dqsb_draw_line_thin_add	(&df[qi+1], d->block[brlvl], pos, sec_pix, chan_stride);
+								case DQT_BRACKET_OPEN:		brlvl = dqsb_bracket_open(d->block, brlvl, chan_stride);
+							break;	case DQT_BRACKET_CLOSE:		brlvl = dqsb_bracket_close(d->block, brlvl, di[qi+1], chan_stride);
+							break;	case DQT_LINE_THIN_ADD:		dqsb_draw_line_thin_add	(&df[qi+1], d->block[brlvl], pos, sec_pix, chan_stride);
 							break;	case DQT_POINT_ADD:		dqsb_draw_point_add	(&df[qi+1], d->block[brlvl], pos, sec_pix, chan_stride);
 							break;	case DQT_RECT_FULL:		dqsb_draw_rect_full_add	(&df[qi+1], d->block[brlvl], pos, sec_pix, chan_stride);
 							break;	case DQT_RECT_BLACK:		dqsb_draw_black_rect	(&df[qi+1], d->block[brlvl], pos, sec_pix, chan_stride);
+							break;	case DQT_RECT_BLACK_INV:	dqsb_draw_black_rect_inv(&df[qi+1], d->block[brlvl], pos, sec_pix, chan_stride);
 							break;	case DQT_PLAIN_FILL:		dqsb_draw_plain_fill_add(&df[qi+1], d->block[brlvl],               chan_stride);
-							/*break;	case DQT_GAIN:			dqsb_pv * df[qi+1];
-							break;	case DQT_GAIN_PARAB:		dqsb_gain_parabolic(pv, df[qi+1]);
-							break;	case DQT_LUMA_COMPRESS:		dqsb_luma_compression(pv, df[qi+1]);
-							break;	case DQT_COL_MATRIX:		dqsb_colour_matrix(&df[qi+1], d->block[brlvl], pos, sec_pix, chan_stride);
-							break;	case DQT_CLIP:			dqsb_min(pv, df[qi+1]);
-							break;	case DQT_CLAMP:			dqsb_clamp(pv, 0.f, 1.f);
-							break;	case DQT_CIRCLE_FULL:		dqsb_draw_circle_full_add(&df[qi+1], d->block[brlvl], pos, sec_pix, chan_stride);
-							break;	case DQT_CIRCLE_HOLLOW:		dqsb_draw_circle_hollow_add(&df[qi+1], d->block[brlvl], pos, sec_pix, chan_stride);
-							break;	//case DQT_BLIT_BILINEAR:	dqsb_blit_sprite_bilinear(&df[qi+1], d->data, d->block[brlvl], pos, sec_pix, chan_stride);*/
+							break;	case DQT_TRIANGLE:		dqsb_draw_polygon(&df[qi+1], 3, d->block[brlvl], pos, sec_pix, chan_stride);
+							break;	case DQT_TETRAGON:		dqsb_draw_polygon(&df[qi+1], 4, d->block[brlvl], pos, sec_pix, chan_stride);
+							break;	case DQT_GAIN:
+							case DQT_GAIN_PARAB:
+							case DQT_LUMA_COMPRESS:
+							case DQT_COL_MATRIX:
+							case DQT_CLIP:
+							case DQT_CLAMP:
+							case DQT_GAMMA_BANDAID:		dqsb_draw_effect(di[qi], &df[qi+1], d->block[brlvl], chan_stride);
+							break;	case DQT_CIRCLE_FULL:
+							case DQT_CIRCLE_BLACK:
+							case DQT_CIRCLE_HOLLOW:		dqsb_draw_circle(di[qi], &df[qi+1], d->block[brlvl], pos, sec_pix, chan_stride);
 							break;	case DQT_BLIT_FLATTOP:		dqsb_blit_sprite_flattop(&df[qi+1], d->data, d->block[brlvl], pos, sec_pix, chan_stride);
-							/*break;	case DQT_BLIT_FLATTOP_ROT:	dqsb_blit_sprite_flattop_rot(&df[qi+1], d->data, d->block[brlvl], pos, sec_pix, chan_stride);
-							break;	//case DQT_BLIT_PHOTO:		dqsb_blit_photo(&df[qi+1], d->data, d->block[brlvl], pos, sec_pix, chan_stride);
-							break;	case DQT_TEST1:			dqsb_drawgradienttest(d->block[brlvl], pos, sec_pix, chan_stride);
-							*/break;
+							break;	case DQT_BLIT_FLATTOP_ROT:	dqsb_blit_sprite_flattop_rot(&df[qi+1], d->data, d->block[brlvl], pos, sec_pix, chan_stride);
+							break;	case DQT_BLIT_AANEAREST:	dqsb_blit_sprite_aa_nearest(&df[qi+1], d->data, d->block[brlvl], pos, sec_pix, chan_stride);
+							break;	case DQT_BLIT_AANEAREST_ROT:	dqsb_blit_sprite_aa_nearest_rot(&df[qi+1], d->data, d->block[brlvl], pos, sec_pix, chan_stride);
+							break;	case DQT_TEST1:			dqsb_draw_gradient_test(d->block[brlvl], pos, sec_pix, chan_stride, d->r_dim);
+							break;
 						}
 					}
 
@@ -210,7 +217,7 @@ void drawq_soft_run()
 			rl_sem_init(&d->done_sem, 0);
 			d->thread_id = i;
 			d->thread_count = DQS_THREADS;
-			d->block = (float **) calloc_2d(4, 1 << 2*fb->sector_size, 4*sizeof(float));	// alloc float blocks once, one block per bracket level
+			d->block = (float **) calloc_2d(DQS_BLOCK_COUNT, 1 << 2*fb->sector_size, 4*sizeof(float));	// alloc base block and one block per bracket level
 
 			// Create a worker that initially waits on its processing semaphore
 			rl_thread_create(&d->thread_handle, drawq_soft_thread, d);
@@ -311,7 +318,7 @@ void drawq_soft_quit()
 			// Destroy per-thread synchronisation and working blocks
 			rl_sem_destroy(&d->proc_sem);
 			rl_sem_destroy(&d->done_sem);
-			free_2d((void **) d->block, 4);
+			free_2d((void **) d->block, DQS_BLOCK_COUNT);
 		}
 	}
 

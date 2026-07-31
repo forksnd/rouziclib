@@ -167,6 +167,7 @@ extern "C" {
 #include "graphics/drawqueue.h"
 #include "graphics/drawqueue_enqueue.h"
 #include "graphics/drawqueue/drawqueue_soft.h"
+#include "graphics/drawqueue/drawqueue_soft_ops.h"
 #include "graphics/drawqueue/drawrect.h"
 #include "graphics/drawqueue/drawline.h"
 #include "graphics/drawqueue/blit.h"

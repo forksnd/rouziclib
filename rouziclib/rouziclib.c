@@ -73,6 +73,7 @@
 #ifndef RL_FREESTANDING
 #include "graphics/drawqueue.c"
 #include "graphics/drawqueue_enqueue.c"
+#include "graphics/drawqueue/drawqueue_soft_ops.c"
 #include "graphics/drawqueue/drawqueue_soft.c"
 #include "graphics/drawqueue/drawrect.c"
 #include "graphics/drawqueue/drawline.c"
