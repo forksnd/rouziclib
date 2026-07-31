@@ -1061,6 +1061,7 @@ void sdl_graphics_init_from_handle(const void *window_handle, int flags)
 	SDL_SetWindowSize(fb->window, fb->w, fb->h);
 	SDL_GetWindowSize(fb->window, &fb->w, &fb->h);
 	fb->r.dim = xyi(fb->w, fb->h);
+	fb->real_dim = fb->r.dim;
 	SDL_SetWindowMaximumSize(fb->window, fb->maxdim.x, fb->maxdim.y);
 
 	#ifdef __EMSCRIPTEN__
@@ -1127,6 +1128,7 @@ void sdl_graphics_init_full(const char *window_name, xyi_t dim, xyi_t pos, int f
 	SDL_SetWindowSize(fb->window, fb->w, fb->h);
 	SDL_GetWindowSize(fb->window, &fb->w, &fb->h);
 	fb->r.dim = xyi(fb->w, fb->h);
+	fb->real_dim = fb->r.dim;
 	SDL_SetWindowMaximumSize(fb->window, fb->maxdim.x, fb->maxdim.y);
 
 #if RL_SDL == 3
@@ -1158,7 +1160,8 @@ int sdl_handle_window_resize(zoom_t *zc)
 
 	SDL_GetWindowSize(fb->window, &w, &h);
 
-	if (fb->w == w && fb->h == h && fb->pixel_scale == fb->pixel_scale_new)
+	// Compare physical window dimensions rather than scaled render dimensions
+	if (fb->real_dim.x == w && fb->real_dim.y == h && fb->pixel_scale == fb->pixel_scale_new)
 		return 0;
 
 	// Restore the base direct framebuffer before changing dimensions
