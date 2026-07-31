@@ -196,22 +196,43 @@ static frgb_t dqs_read_fmt_pixel_checked(const uint8_t *im, xyi_t dim, int fmt, 
 	return dqs_read_fmt_pixel(im, dim, fmt, p, cd);
 }
 
-static __m128 dqs_raw_yuv_to_frgb_fast_ps(float y, float u, float v, float depth_mul)
+static __m128 dqs_transfer_bt709_to_linear_ps(__m128 x)
+{
+	__m128 curve, line, selection;
+
+	// Scale code values and select the linear Rec. 709 segment
+	x = _mm_mul_ps(x, _mm_set1_ps(1.f/255.f));
+	selection = _mm_cmplt_ps(x, _mm_set1_ps(0.081f));
+
+	// Match the shared vector BT.709 polynomial
+	curve = _mm_set1_ps(-0.04154f);
+	curve = _mm_add_ps(_mm_mul_ps(curve, x), _mm_set1_ps(0.21208f));
+	curve = _mm_add_ps(_mm_mul_ps(curve, x), _mm_set1_ps(0.72644f));
+	curve = _mm_add_ps(_mm_mul_ps(curve, x), _mm_set1_ps(0.097881f));
+	curve = _mm_add_ps(_mm_mul_ps(curve, x), _mm_set1_ps(0.005135f));
+	line = _mm_mul_ps(x, _mm_set1_ps(1.f/4.5f));
+
+	// Select both transfer segments without scalar channel branches
+	return _mm_or_ps(_mm_and_ps(selection, line), _mm_andnot_ps(selection, curve));
+}
+
+static __m128 dqs_raw_yuv_to_frgb_ps(float y, float u, float v, float depth_mul)
 {
 	__m128 p;
 
-	// Apply the original software drawqueue YUV matrix
+	// Apply the same Rec. 709 YCbCr matrix as the other renderers
 	y = (y*depth_mul-16.f)*(255.f/219.f);
 	u = u*depth_mul-128.f;
 	v = v*depth_mul-128.f;
 	p = _mm_set_ps(255.f,
-		y+2.018f*u,
-		y-0.813f*v-0.391f*u,
-		y+1.596f*v);
+		y+2.1124f*u,
+		y-0.2132f*u-0.5329f*v,
+		y+1.7927f*v);
 
-	// Restore the original vector square transfer approximation
-	p = _mm_mul_ps(p, _mm_set1_ps(1.f/255.f));
-	return _mm_mul_ps(p, p);
+	// Convert all channels through the shared BT.709 approximation
+	p = dqs_transfer_bt709_to_linear_ps(p);
+	return p;
+	//return _mm_blend_ps(p, _mm_set1_ps(1.f), 8);	// sets the alpha to 1 instead of something close
 }
 
 static __m128 dqs_read_yuv420p_ps(const uint8_t *im, xyi_t dim, xyi_t p, int fmt)
@@ -227,10 +248,10 @@ static __m128 dqs_read_yuv420p_ps(const uint8_t *im, xyi_t dim, xyi_t p, int fmt
 
 	// Decode the supported limited-range YUV depths
 	if (fmt==10)
-		return dqs_raw_yuv_to_frgb_fast_ps(im[index], im[full_size+uv_index], im[full_size+half_size+uv_index], 1.f);
+		return dqs_raw_yuv_to_frgb_ps(im[index], im[full_size+uv_index], im[full_size+half_size+uv_index], 1.f);
 	if (fmt==11)
-		return dqs_raw_yuv_to_frgb_fast_ps(u16[index], u16[full_size+uv_index], u16[full_size+half_size+uv_index], 0.25f);
-	return dqs_raw_yuv_to_frgb_fast_ps(u16[index], u16[full_size+uv_index], u16[full_size+half_size+uv_index], 0.0625f);
+		return dqs_raw_yuv_to_frgb_ps(u16[index], u16[full_size+uv_index], u16[full_size+half_size+uv_index], 0.25f);
+	return dqs_raw_yuv_to_frgb_ps(u16[index], u16[full_size+uv_index], u16[full_size+half_size+uv_index], 0.0625f);
 }
 
 static __m128 dqs_read_fmt_pixel_ps(const uint8_t *im, xyi_t dim, int fmt, xyi_t p, dqs_comp_decode_t *cd)
