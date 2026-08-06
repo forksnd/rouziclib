@@ -1,17 +1,10 @@
 #ifdef RL_SDL
 
 #if RL_SDL == 3
+#include <SDL3/SDL_main.h>
 //#include <SDL3/SDL_syswm.h>
 #else
 #include <SDL2/SDL_syswm.h>
-#endif
-
-#if defined(_WIN32) && RL_SDL == 3 && !defined(RL_SDL3_EXCL_WINMAIN)		// /SUBSYSTEM:WINDOWS workaround
-extern int main(int argc, char *argv[]);
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine, int nCmdShow)
-{
-	return main(0, NULL);
-}
 #endif
 
 SDL_Rect make_sdl_rect(int x, int y, int w, int h)
@@ -36,10 +29,13 @@ SDL_Rect recti_to_sdl_rect(recti_t ri)
 double sdl_get_window_hz(SDL_Window *window)
 {
 #if RL_SDL == 3
-	const SDL_DisplayMode *mode = SDL_GetWindowFullscreenMode(window);
+	const SDL_DisplayMode *mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
 
 	if (mode == NULL)
+	{
+		fprintf_rl(stderr, "SDL_GetCurrentDisplayMode failed: %s\n", SDL_GetError());
 		return -1;
+	}
 	return mode->refresh_rate;
 #else
 	SDL_DisplayMode mode;
@@ -71,17 +67,23 @@ void sdl_set_window_rect(SDL_Window *window, recti_t r)
 xyi_t sdl_get_display_dim(int display_id)
 {
 #if RL_SDL == 3
-	int num_displays;
-	SDL_DisplayID *displays = SDL_GetDisplays(&num_displays);	
-	if (display_id < num_displays)
+	int num_displays=0;
+	xyi_t dim=xyi(-1, -1);
+	SDL_DisplayID *displays = SDL_GetDisplays(&num_displays);
+
+	// Read the indexed display mode while retaining ownership of the display list
+	if (displays && display_id >= 0 && display_id < num_displays)
 	{
 		const SDL_DisplayMode *mode = SDL_GetCurrentDisplayMode(displays[display_id]);
 
 		if (mode)
-			return xyi(mode->w, mode->h);
+			dim = xyi(mode->w, mode->h);
 	}
+	SDL_free(displays);
 
-	fprintf_rl(stderr, "SDL_GetCurrentDisplayMode failed: %s\n", SDL_GetError());
+	if (dim.x < 0)
+		fprintf_rl(stderr, "SDL_GetCurrentDisplayMode failed for display index %d: %s\n", display_id, SDL_GetError());
+	return dim;
 #else
 	SDL_DisplayMode mode={0};
 
@@ -95,8 +97,11 @@ xyi_t sdl_get_display_dim(int display_id)
 int sdl_get_display_count()
 {
 #if RL_SDL == 3
-	int count;
-	SDL_GetDisplays(&count);
+	int count=0;
+	SDL_DisplayID *displays = SDL_GetDisplays(&count);
+
+	// Release the allocated display ID list after retaining its count
+	SDL_free(displays);
 	return count;
 #else
 	return SDL_GetNumVideoDisplays();
@@ -108,19 +113,22 @@ recti_t sdl_get_display_rect(int display_id)
 	SDL_Rect r;
 
 #if RL_SDL == 2
-	if (display_id < sdl_get_display_count())
+	if (display_id >= 0 && display_id < sdl_get_display_count())
 		if (SDL_GetDisplayBounds(display_id, &r)==0)
 		{
-#else
-	int num_displays;
-	SDL_DisplayID *displays = SDL_GetDisplays(&num_displays);	
-	if (display_id < num_displays)
-		if (SDL_GetDisplayBounds(displays[display_id], &r))
-		{
-			SDL_free(displays);
-#endif
 			return recti( xyi(r.x, r.y), xyi(r.x+r.w-1, r.y+r.h-1));
 		}
+#else
+	int num_displays=0, success=0;
+	SDL_DisplayID *displays = SDL_GetDisplays(&num_displays);
+
+	// Query a validated display index before releasing the allocated ID list
+	if (displays && display_id >= 0 && display_id < num_displays)
+		success = SDL_GetDisplayBounds(displays[display_id], &r);
+	SDL_free(displays);
+	if (success)
+		return recti( xyi(r.x, r.y), xyi(r.x+r.w-1, r.y+r.h-1));
+#endif
 
 	return recti(xyi(0,0), xyi(0,0));
 }
@@ -130,19 +138,22 @@ recti_t sdl_get_display_usable_rect(int display_id)
 	SDL_Rect r;
 
 #if RL_SDL == 2
-	if (display_id < sdl_get_display_count())
+	if (display_id >= 0 && display_id < sdl_get_display_count())
 		if (SDL_GetDisplayUsableBounds(display_id, &r)==0)
 		{
-#else
-	int num_displays;
-	SDL_DisplayID *displays = SDL_GetDisplays(&num_displays);	
-	if (display_id < num_displays)
-		if (SDL_GetDisplayUsableBounds(displays[display_id], &r))
-		{
-			SDL_free(displays);
-#endif
 			return recti( xyi(r.x, r.y), xyi(r.x+r.w-1, r.y+r.h-1));
 		}
+#else
+	int num_displays=0, success=0;
+	SDL_DisplayID *displays = SDL_GetDisplays(&num_displays);
+
+	// Query a validated display index before releasing the allocated ID list
+	if (displays && display_id >= 0 && display_id < num_displays)
+		success = SDL_GetDisplayUsableBounds(displays[display_id], &r);
+	SDL_free(displays);
+	if (success)
+		return recti( xyi(r.x, r.y), xyi(r.x+r.w-1, r.y+r.h-1));
+#endif
 
 	return recti(XYI0, XYI0);
 }
@@ -322,7 +333,13 @@ void sdl_mouse_event_proc(mouse_t *mouse, SDL_Event event, zoom_t *zc)
 
 	if (event.type==SDL_MOUSEMOTION)
 	{
-		if (mouse->discard_warp_first_move==0 || abs(event.motion.xrel)+abs(event.motion.yrel) < 40)
+		// Measure relative motion with the coordinate type used by each SDL version
+		#if RL_SDL == 3
+		double motion_distance = fabs(event.motion.xrel) + fabs(event.motion.yrel);
+		#else
+		int motion_distance = abs(event.motion.xrel) + abs(event.motion.yrel);
+		#endif
+		if (mouse->discard_warp_first_move==0 || motion_distance < 40.)
 			mouse->d = add_xy(mouse->d, xy(event.motion.xrel, event.motion.yrel));			// only works when the cursor is inside the window or with mouse.warp
 		mouse->discard_warp_first_move = 0;
 	}
@@ -451,9 +468,20 @@ int get_sdl_opengl_renderer_index()
 double get_sdl_window_screen_refresh_rate(SDL_Window *window)
 {
 #if RL_SDL == 3
-	const SDL_DisplayMode *mode = SDL_GetDesktopDisplayMode(SDL_GetDisplayForWindow(window));
+	const SDL_DisplayMode *mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
 	if (mode)
-		return (double) mode->refresh_rate_numerator / (double) mode->refresh_rate_denominator;
+	{
+		// Prefer the precise ratio when SDL reports both components
+		if (mode->refresh_rate_numerator > 0 && mode->refresh_rate_denominator > 0)
+			return (double) mode->refresh_rate_numerator / (double) mode->refresh_rate_denominator;
+		return mode->refresh_rate;
+	}
+#else
+	SDL_DisplayMode mode;
+
+	// Return the SDL 2 window display refresh rate when it is available
+	if (SDL_GetWindowDisplayMode(window, &mode)==0)
+		return mode.refresh_rate;
 #endif
 	return NAN;
 }
@@ -713,8 +741,8 @@ static int sdl_graphics_create_renderer(int opengl)
 	// Create the SDL renderer appropriate for the selected presentation path
 #if RL_SDL == 3
 	fb->renderer = SDL_CreateRenderer(fb->window, opengl ? "opengl" : NULL);
-	if (fb->renderer)
-		SDL_SetRenderVSync(fb->renderer, SDL_RENDERER_VSYNC_ADAPTIVE);
+	if (fb->renderer && !SDL_SetRenderVSync(fb->renderer, 1))
+		fprintf_rl(stderr, "SDL_SetRenderVSync failed: %s\n", SDL_GetError());
 #else
 	fb->renderer = SDL_CreateRenderer(fb->window, opengl ? get_sdl_opengl_renderer_index() : -1, SDL_RENDERER_PRESENTVSYNC);
 #endif
@@ -992,6 +1020,8 @@ int sdl_graphics_set_drawq_mode(int mode)
 
 void sdl_graphics_init_from_handle(const void *window_handle, int flags)
 {
+	SDL_Window *temp_window;
+
 	// Record that backend-specific window recreation is not permitted
 	sdl_graphics_window_is_foreign = 1;
 	sdl_graphics_window_flags = flags;
@@ -1007,44 +1037,35 @@ void sdl_graphics_init_from_handle(const void *window_handle, int flags)
 	// Create a temporary window with the selected presentation API
 	int temp_flags = (int) sdl_graphics_window_flags_for_mode(flags, fb->use_drawq);
 #if RL_SDL == 2
-	SDL_Window *temp_window = SDL_CreateWindow("", 0, 0, 1, 1, temp_flags | SDL_WINDOW_HIDDEN);
+	temp_window = SDL_CreateWindow("", 0, 0, 1, 1, temp_flags | SDL_WINDOW_HIDDEN);
 #else
-	SDL_Window *temp_window = SDL_CreateWindow("", 1, 1, temp_flags | SDL_WINDOW_HIDDEN);
+	temp_window = SDL_CreateWindow("", 1, 1, temp_flags | SDL_WINDOW_HIDDEN);
 #endif
+	if (temp_window==NULL)
+	{
+		fprintf_rl(stderr, "sdl_graphics_init_from_handle(): temporary SDL_CreateWindow failed: %s\n", SDL_GetError());
+		return;
+	}
+
+#if RL_SDL == 2
 	char hint[32];
 	sprintf(hint, "%p", temp_window);
-#if RL_SDL == 2
 	SDL_SetHint(SDL_HINT_VIDEO_WINDOW_SHARE_PIXEL_FORMAT, hint);
-#else
-	SDL_SetHint(SDL_PROP_WINDOW_CREATE_WIN32_PIXEL_FORMAT_HWND_POINTER, hint);
-#endif
 
 	#ifdef RL_VULKAN
 	// Mark an adopted SDL 2 window as Vulkan-compatible when Vulkan owns its surface
-	#if RL_SDL == 2
 	if (sdl_graphics_window_api_for_mode(fb->use_drawq)==SDL_GRAPHICS_WINDOW_API_VULKAN)
 		SDL_SetHint(SDL_HINT_VIDEO_FOREIGN_WINDOW_VULKAN, "1");
-	#endif
 	#endif
 
 	#ifdef RL_OPENCL_GL
 	// Mark an adopted window as OpenGL-compatible whenever the shared API requires it
 	if (sdl_graphics_window_api_for_mode(fb->use_drawq)==SDL_GRAPHICS_WINDOW_API_OPENGL)
-		#if RL_SDL == 2
 		SDL_SetHint(SDL_HINT_VIDEO_FOREIGN_WINDOW_OPENGL, "1");
-		#else
-		SDL_SetHint(SDL_PROP_WINDOW_CREATE_OPENGL_BOOLEAN, "1");
-		#endif
 	#endif
-#if RL_SDL == 2
+
 	// Adopt the foreign window and release the temporary format donor
 	fb->window = SDL_CreateWindowFrom(window_handle);
-	if (fb->window==NULL)
-	{
-		fprintf_rl(stderr, "SDL_CreateWindowFrom failed: %s\n", SDL_GetError());
-		SDL_DestroyWindow(temp_window);
-		return;
-	}
 	SDL_SetHint(SDL_HINT_VIDEO_WINDOW_SHARE_PIXEL_FORMAT, NULL);
 	#ifdef RL_VULKAN
 	SDL_SetHint(SDL_HINT_VIDEO_FOREIGN_WINDOW_VULKAN, NULL);
@@ -1053,13 +1074,58 @@ void sdl_graphics_init_from_handle(const void *window_handle, int flags)
 	SDL_SetHint(SDL_HINT_VIDEO_FOREIGN_WINDOW_OPENGL, NULL);
 	#endif
 	SDL_DestroyWindow(temp_window);
+#else
+	#ifdef _WIN32
+	// Describe the adopted Win32 window and its presentation API with SDL 3 properties
+	SDL_PropertiesID props = SDL_CreateProperties();
+	int api = sdl_graphics_window_api_for_mode(fb->use_drawq);
+	int properties_ok = props != 0;
+	if (properties_ok)
+		properties_ok &= SDL_SetPointerProperty(props, SDL_PROP_WINDOW_CREATE_WIN32_HWND_POINTER, (void *) window_handle);
+	if (properties_ok)
+		properties_ok &= SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, temp_flags);
+	if (properties_ok && api==SDL_GRAPHICS_WINDOW_API_OPENGL)
+	{
+		properties_ok &= SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_OPENGL_BOOLEAN, 1);
+		properties_ok &= SDL_SetPointerProperty(props, SDL_PROP_WINDOW_CREATE_WIN32_PIXEL_FORMAT_HWND_POINTER, sdl_get_window_hwnd(temp_window));
+	}
+	if (properties_ok && api==SDL_GRAPHICS_WINDOW_API_VULKAN)
+		properties_ok &= SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_VULKAN_BOOLEAN, 1);
+
+	// Create the SDL wrapper only after every required property is accepted
+	if (properties_ok)
+		fb->window = SDL_CreateWindowWithProperties(props);
+	else
+		fprintf_rl(stderr, "sdl_graphics_init_from_handle(): SDL window properties failed: %s\n", SDL_GetError());
+	if (props)
+		SDL_DestroyProperties(props);
+	SDL_DestroyWindow(temp_window);
+	#else
+	// Reject unsupported native handle types explicitly on non-Windows SDL 3 builds
+	fprintf_rl(stderr, "sdl_graphics_init_from_handle(): SDL 3 foreign windows are only implemented for Win32\n");
+	SDL_DestroyWindow(temp_window);
+	fb->window = NULL;
+	#endif
+#endif
+
+	if (fb->window==NULL)
+	{
+		fprintf_rl(stderr, "sdl_graphics_init_from_handle(): adopting the native window failed: %s\n", SDL_GetError());
+		return;
+	}
 
 	// Initialise the selected graphics mode for the adopted window
 	SDL_GetWindowSizeInPixels(fb->window, &fb->w, &fb->h);
 	if (!sdl_graphics_init_with_fallback("sdl_graphics_init_from_handle()"))
 		return;
+#if RL_SDL == 3
+	// Preserve the native window's logical size while retaining pixel framebuffer dimensions
+	SDL_GetWindowSizeInPixels(fb->window, &fb->w, &fb->h);
+	SDL_StartTextInput(fb->window);
+#else
 	SDL_SetWindowSize(fb->window, fb->w, fb->h);
 	SDL_GetWindowSize(fb->window, &fb->w, &fb->h);
+#endif
 	fb->r.dim = xyi(fb->w, fb->h);
 	fb->real_dim = fb->r.dim;
 	SDL_SetWindowMaximumSize(fb->window, fb->maxdim.x, fb->maxdim.y);
@@ -1068,10 +1134,6 @@ void sdl_graphics_init_from_handle(const void *window_handle, int flags)
 	// Direct keyboard events to the Emscripten canvas
 	SDL_SetHint(SDL_HINT_EMSCRIPTEN_KEYBOARD_ELEMENT, "#screen");
 	#endif
-#else
-	// Leave foreign-window support disabled until its SDL 3 path is implemented
-	SDL_DestroyWindow(temp_window);
-#endif
 }
 void sdl_graphics_init_full(const char *window_name, xyi_t dim, xyi_t pos, int flags)
 {
@@ -1126,7 +1188,11 @@ void sdl_graphics_init_full(const char *window_name, xyi_t dim, xyi_t pos, int f
 	SDL_SetWindowPosition(fb->window, pos.x, pos.y);
 	#endif
 	SDL_SetWindowSize(fb->window, fb->w, fb->h);
+#if RL_SDL == 3
+	SDL_GetWindowSizeInPixels(fb->window, &fb->w, &fb->h);
+#else
 	SDL_GetWindowSize(fb->window, &fb->w, &fb->h);
+#endif
 	fb->r.dim = xyi(fb->w, fb->h);
 	fb->real_dim = fb->r.dim;
 	SDL_SetWindowMaximumSize(fb->window, fb->maxdim.x, fb->maxdim.y);
@@ -1158,7 +1224,11 @@ int sdl_handle_window_resize(zoom_t *zc)
 {
 	int w, h;
 
+#if RL_SDL == 3
+	SDL_GetWindowSizeInPixels(fb->window, &w, &h);
+#else
 	SDL_GetWindowSize(fb->window, &w, &h);
+#endif
 
 	// Compare physical window dimensions rather than scaled render dimensions
 	if (fb->real_dim.x == w && fb->real_dim.y == h && fb->pixel_scale == fb->pixel_scale_new)
@@ -1486,6 +1556,11 @@ int sdl_toggle_borderless_fullscreen()
 
 void sdl_quit_actions()
 {
+	#ifndef RL_EXCL_THREADING
+	// Stop audio callbacks and release mixer state before shutting down SDL
+	sdl_audiosys_quit();
+	#endif
+
 	// Release the active graphics mode through the shared teardown path
 	sdl_graphics_deinit_mode(1);
 

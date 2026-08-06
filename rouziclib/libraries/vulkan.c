@@ -404,7 +404,12 @@ static VkResult vk_create_swapchain()
 		fb->vk.swapchain_extent=capabilities.currentExtent;
 	else
 	{
+		// Read the drawable size with the API provided by each SDL version
+		#if RL_SDL == 3
+		SDL_GetWindowSizeInPixels(fb->window, &drawable_width, &drawable_height);
+		#else
 		SDL_Vulkan_GetDrawableSize(fb->window, &drawable_width, &drawable_height);
+		#endif
 		if (drawable_width<=0 || drawable_height<=0)
 			return VK_NOT_READY;
 		fb->vk.swapchain_extent.width=rangelimit(drawable_width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);

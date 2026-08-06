@@ -95,7 +95,7 @@ Call `sdl_audiosys_init(1024)` once during SDL startup, then call `tone_keep_ali
 
 When `use_mutex` is nonzero, the audio callback is locked automatically. Lock `audiosys.bus[bus_index].mutex` around main-thread writes to the same application data. Call `audiosys_bus_unregister(tone)` before freeing `tone`; unregistration sends the callback a blocking deinitialization signal with `stream == NULL` and `bus_index == -1`.
 
-The current `sdl_audiosys_init()` device-opening implementation is complete for SDL2. Its SDL3 branch is still marked TODO, so SDL3 applications need their own device setup for now.
+`sdl_audiosys_init()` supports SDL2 callback devices and SDL3 playback streams. Both paths select the configured driver and playback device, expose the same floating-point stereo mixer format, and are released by `sdl_quit_actions()`.
 
 == Background work
 
