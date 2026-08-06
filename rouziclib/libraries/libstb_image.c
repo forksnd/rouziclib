@@ -50,7 +50,7 @@ raster_t load_image_mem_libstb_image(uint8_t *raw_data, size_t size, const int m
 
 int save_image_srgb_libstb(const char *path, raster_t r, int jpg_quality)
 {
-#ifdef RL_IMAGE_FILE
+#if defined(RL_IMAGE_FILE) && !defined(STBI_WRITE_NO_STDIO)
 	char ext[32];
 
 	extract_file_extension(path, ext);
@@ -64,7 +64,7 @@ int save_image_srgb_libstb(const char *path, raster_t r, int jpg_quality)
 	if (strcmp(ext, "jpg")==0 || strcmp(ext, "jpeg")==0)
 		return stbi_write_jpg(path, r.dim.x, r.dim.y, 4, r.srgb, jpg_quality);
 #else
-	fprintf_rl(stderr, "Define RL_IMAGE_FILE in order to be able to use save_image_srgb_libstb()\n");
+	fprintf_rl(stderr, "Define RL_IMAGE_FILE and not STBI_WRITE_NO_STDIO in order to be able to use save_image_srgb_libstb()\n");
 #endif
 
 	return 0;
