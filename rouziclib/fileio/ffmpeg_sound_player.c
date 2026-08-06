@@ -577,6 +577,10 @@ void audio_player_callback(float *stream, audiosys_t *sys, int bus_index, audio_
 	}
 	data->ts_cb += sys->sec_per_buf;
 
+	// Keep track of the position in the file
+	if (data->ifr != -1)
+		data->byte_pos = data->frame[data->ifr].info.pkt_pos;
+
 	rl_mutex_unlock(&data->mutex);
 }
 

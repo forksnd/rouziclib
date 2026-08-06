@@ -27,6 +27,7 @@ typedef struct
 	uint64_t file_size;
 	double time_offset;	// offset to convert between callback sample time and timestamp
 	int ifr, is;	// frame index and sample index in that frame
+	size_t byte_pos;
 } audio_player_data_t;
 
 extern void audio_player_main(audio_player_data_t *data, char *path, double ts_req, double speed, double volume, int mode_stream);
