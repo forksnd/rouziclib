@@ -766,6 +766,17 @@ static int sdl_graphics_create_texture()
 		return 0;
 	}
 
+#if RL_SDL == 3
+	// Present full-frame output as opaque regardless of its unused alpha byte
+	if (!SDL_SetTextureBlendMode(fb->texture, SDL_BLENDMODE_NONE))
+	{
+		fprintf_rl(stderr, "SDL_SetTextureBlendMode failed: %s\n", SDL_GetError());
+		SDL_DestroyTexture(fb->texture);
+		fb->texture = NULL;
+		return 0;
+	}
+#endif
+
 	return 1;
 }
 
@@ -1289,9 +1300,9 @@ int sdl_handle_window_resize(zoom_t *zc)
 
 		SDL_DestroyTexture(fb->texture);
 
-		fb->texture = SDL_CreateTexture(fb->renderer, sdl_graphics_texture_format, SDL_TEXTUREACCESS_STREAMING, fb->w, fb->h);
-		if (fb->texture==NULL)
-			fprintf_rl(stderr, "SDL_CreateTexture failed: %s\n", SDL_GetError());
+		// Recreate the resized texture with the same opaque presentation state
+		if (!sdl_graphics_create_texture())
+			return 0;
 
 		// Blank the resized texture
 		int pitch;

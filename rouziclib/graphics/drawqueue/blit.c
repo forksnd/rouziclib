@@ -342,8 +342,8 @@ static frgb_t dqs_image_filter_flattop(const uint8_t *im, xyi_t dim, int fmt, xy
 	for (i.y=start.y; i.y<=end.y; i.y++)
 		for (i.x=start.x; i.x<=end.x; i.x++)
 		{
-			dx = MAXN(fabsf(pif.x-i.x), knee.x);
-			dy = MAXN(fabsf(pif.y-i.y), knee.y);
+			dx = MAXN(fabsf((float) (pif.x-i.x)), (float) knee.x);
+			dy = MAXN(fabsf((float) (pif.y-i.y)), (float) knee.y);
 			weight = slope.x*(dx-pscale.x) * slope.y*(dy-pscale.y);
 
 			// Avoid decoding zero-contribution samples around exact-scale pixels
@@ -403,8 +403,8 @@ static frgb_t dqs_image_filter_aa_nearest(const uint8_t *im, xyi_t dim, int fmt,
 	// Calculate the lower sample and its antialiasing weights
 	p00.x = (int) floor(pif.x);
 	p00.y = (int) floor(pif.y);
-	wx = rangelimitf((0.5f-fabsf(pif.x-p00.x))/pscale.x+0.5f, 0.f, 1.f);
-	wy = rangelimitf((0.5f-fabsf(pif.y-p00.y))/pscale.y+0.5f, 0.f, 1.f);
+	wx = rangelimitf((0.5f-fabsf((float) (pif.x-p00.x)))/(float) pscale.x+0.5f, 0.f, 1.f);
+	wy = rangelimitf((0.5f-fabsf((float) (pif.y-p00.y)))/(float) pscale.y+0.5f, 0.f, 1.f);
 
 	// Accumulate the four neighboring source pixels
 	weight = wx*wy;

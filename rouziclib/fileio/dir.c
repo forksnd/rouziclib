@@ -1,7 +1,9 @@
 #ifndef RL_FREESTANDING
 
 #ifdef _WIN32
+#ifndef INVALID_HANDLE_VALUE
 #define INVALID_HANDLE_VALUE ((HANDLE)(LONG_PTR)-1)	// handleapi.h
+#endif
 #include "../libraries/dirent.c"
 #endif
 

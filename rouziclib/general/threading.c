@@ -7,22 +7,30 @@
 
 #ifdef _WIN32
 // WinBase.h
+#ifndef INFINITE
 #define INFINITE            0xFFFFFFFF
+#endif
+#ifndef THREAD_PRIORITY_LOWEST
 #define THREAD_PRIORITY_LOWEST          THREAD_BASE_PRIORITY_MIN
+#endif
+#ifndef THREAD_PRIORITY_HIGHEST
 #define THREAD_PRIORITY_HIGHEST         THREAD_BASE_PRIORITY_MAX
+#endif
 
 WINBASEAPI _Ret_maybenull_ HANDLE WINAPI CreateWaitableTimerA( _In_opt_ LPSECURITY_ATTRIBUTES lpTimerAttributes, _In_ BOOL bManualReset, _In_opt_ LPCSTR lpTimerName);
-#ifndef UNICODE
+#if !defined(UNICODE) && !defined(CreateWaitableTimer)
 #define CreateWaitableTimer  CreateWaitableTimerA
 #endif
 
 WINBASEAPI _Ret_maybenull_ HANDLE WINAPI CreateSemaphoreA( _In_opt_ LPSECURITY_ATTRIBUTES lpSemaphoreAttributes, _In_ LONG lInitialCount, _In_ LONG lMaximumCount, _In_opt_ LPCSTR lpName);
-#ifndef UNICODE
+#if !defined(UNICODE) && !defined(CreateSemaphore)
 #define CreateSemaphore  CreateSemaphoreA
 #endif
 
 // winerror.h
+#ifndef ERROR_TIMEOUT
 #define ERROR_TIMEOUT                    1460L
+#endif
 #endif
 
 // WASI lacks much of the pthread stuff
