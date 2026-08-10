@@ -14,7 +14,7 @@
 
 #include <vulkan/vulkan.h>
 
-#define RL_VK_FRAMES_IN_FLIGHT 2
+#define RL_VK_FRAMES_IN_FLIGHT 1
 
 typedef struct
 {

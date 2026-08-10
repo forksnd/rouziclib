@@ -268,8 +268,8 @@ static VkResult vk_create_instance_surface()
 	}
 	#endif
 
-	// Create a Vulkan 1.1 instance without requiring optional validation layers
-	VkApplicationInfo application_info = { .sType=VK_STRUCTURE_TYPE_APPLICATION_INFO, .pApplicationName="rouziclib", .apiVersion=VK_API_VERSION_1_1 };
+	// Create a Vulkan 1.0 instance without requiring optional validation layers
+	VkApplicationInfo application_info = { .sType=VK_STRUCTURE_TYPE_APPLICATION_INFO, .pApplicationName="rouziclib", .apiVersion=VK_API_VERSION_1_0 };
 	VkInstanceCreateInfo instance_info = { .sType=VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo=&application_info, .enabledExtensionCount=extension_count, .ppEnabledExtensionNames=extensions };
 	ret = vkCreateInstance(&instance_info, NULL, &fb->vk.instance);
 	#ifndef _WIN32

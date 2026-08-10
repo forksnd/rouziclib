@@ -12,8 +12,8 @@ where spirv-val >nul 2>nul || (
 	exit /b 1
 )
 
-glslc -O --target-env=vulkan1.1 drawqueue.comp -o drawqueue.comp.spv || exit /b 1
-spirv-val --target-env vulkan1.1 drawqueue.comp.spv || exit /b 1
+glslc -O --target-env=vulkan1.0 drawqueue.comp -o drawqueue.comp.spv || exit /b 1
+spirv-val --target-env vulkan1.0 drawqueue.comp.spv || exit /b 1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0embed_spirv.ps1" "%~dp0drawqueue.comp.spv" "%~dp0drawqueue.comp.spv.h" || exit /b 1
 
 echo Generated and validated drawqueue.comp.spv.h
