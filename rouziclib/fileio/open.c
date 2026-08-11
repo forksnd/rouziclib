@@ -261,7 +261,7 @@ uint8_t *load_raw_file(const char *path, size_t *size)
 
 int save_raw_file(const char *path, const char *mode, uint8_t *data, size_t data_size)
 {
-	char *msg = sprintf_alloc("Save raw file to path %s\nData location: %zu bytes at %#zx (module %s)", path, data_size, (size_t) data, module_id);
+	char *msg = sprintf_alloc("Save raw file to path %s\nData location: %zu bytes at %#zx", path, data_size, (size_t) data);
 	char *rsp = wahe_run_command(msg);
 	free(msg);
 
