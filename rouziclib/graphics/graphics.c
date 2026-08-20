@@ -546,9 +546,12 @@ framebuffer_t *init_framebuffer(xyi_t dim, xyi_t maxdim, const int mode)
 	fb->h = fb->r.dim.y;
 	fb->maxdim = maxdim;
 
-	// Default newly allocated framebuffers to standard sRGB output
+	// Set default transfer function
+#ifdef __APPLE__
 	fb->output_transfer = FB_OUTPUT_SRGB;
-	fb->output_gamma = 2.2;
+#else
+	fb->output_transfer = FB_OUTPUT_GAMMA;
+#endif
 
 	return fb;
 }
