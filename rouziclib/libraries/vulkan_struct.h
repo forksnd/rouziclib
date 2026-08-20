@@ -29,7 +29,6 @@ typedef struct
 	VkCommandBuffer command_buffer;
 	VkFence fence;
 	VkSemaphore image_available;
-	VkSemaphore render_finished;
 	VkQueryPool timestamp_pool;
 	VkImage output_image;
 	VkDeviceMemory output_memory;
@@ -62,6 +61,7 @@ typedef struct
 	VkFormat swapchain_format;
 	VkExtent2D swapchain_extent;
 	VkImage *swapchain_images;
+	VkSemaphore *swapchain_render_finished;
 	uint32_t swapchain_image_count;
 	uint32_t timestamp_valid_bits;
 	float timestamp_period;

@@ -349,6 +349,12 @@ static VkResult vk_select_device()
 
 static void vk_destroy_swapchain()
 {
+	// Release the presentation semaphores once their swapchain is idle
+	for (uint32_t i=0; i < fb->vk.swapchain_image_count; i++)
+		if (fb->vk.swapchain_render_finished[i])
+			vkDestroySemaphore(fb->vk.device, fb->vk.swapchain_render_finished[i], NULL);
+	free_null(&fb->vk.swapchain_render_finished);
+
 	// Release swapchain images before destroying the presentation chain
 	free_null(&fb->vk.swapchain_images);
 	if (fb->vk.swapchain)
@@ -367,6 +373,8 @@ static VkResult vk_create_swapchain()
 	VkCompositeAlphaFlagBitsKHR composite_alpha=VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
 	VkSwapchainKHR old_swapchain=fb->vk.swapchain, new_swapchain=VK_NULL_HANDLE;
 	VkImage *old_swapchain_images=fb->vk.swapchain_images;
+	VkSemaphore *old_render_finished=fb->vk.swapchain_render_finished;
+	uint32_t old_image_count=fb->vk.swapchain_image_count;
 	int drawable_width, drawable_height;
 
 	#ifdef _WIN32
@@ -436,7 +444,13 @@ static VkResult vk_create_swapchain()
 	VK_ERR_RET("vkCreateSwapchainKHR", ret);
 	fb->vk.swapchain=new_swapchain;
 	fb->vk.swapchain_images=NULL;
+	fb->vk.swapchain_render_finished=NULL;
 	fb->vk.swapchain_image_count=0;
+	// Release synchronization belonging to the retired presentation images
+	for (uint32_t i=0; i < old_image_count; i++)
+		if (old_render_finished[i])
+			vkDestroySemaphore(fb->vk.device, old_render_finished[i], NULL);
+	free(old_render_finished);
 	free(old_swapchain_images);
 	if (old_swapchain)
 		vkDestroySwapchainKHR(fb->vk.device, old_swapchain, NULL);
@@ -444,6 +458,15 @@ static VkResult vk_create_swapchain()
 	vkGetSwapchainImagesKHR(fb->vk.device, fb->vk.swapchain, &fb->vk.swapchain_image_count, NULL);
 	fb->vk.swapchain_images=calloc(fb->vk.swapchain_image_count, sizeof(*fb->vk.swapchain_images));
 	vkGetSwapchainImagesKHR(fb->vk.device, fb->vk.swapchain, &fb->vk.swapchain_image_count, fb->vk.swapchain_images);
+
+	// Give each swapchain image a semaphore reusable only after that image is acquired again
+	fb->vk.swapchain_render_finished=calloc(fb->vk.swapchain_image_count, sizeof(*fb->vk.swapchain_render_finished));
+	VkSemaphoreCreateInfo semaphore_info = { .sType=VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+	for (uint32_t i=0; i < fb->vk.swapchain_image_count; i++)
+	{
+		ret=vkCreateSemaphore(fb->vk.device, &semaphore_info, NULL, &fb->vk.swapchain_render_finished[i]);
+		VK_ERR_RET("vkCreateSemaphore", ret);
+	}
 	fb->vk.swapchain_dirty=0;
 
 	return VK_SUCCESS;
@@ -555,14 +578,12 @@ static VkResult vk_create_frames()
 		frame->command_buffer=command_buffers[i];
 		frame->descriptor_set=descriptor_sets[i];
 
-		// Create signalled fences and binary swapchain semaphores for initial reuse
+		// Create a signalled fence and acquisition semaphore for this reusable frame slot
 		VkFenceCreateInfo fence_info = { .sType=VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, .flags=VK_FENCE_CREATE_SIGNALED_BIT };
 		VkSemaphoreCreateInfo semaphore_info = { .sType=VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
 		ret = vkCreateFence(fb->vk.device, &fence_info, NULL, &frame->fence);
 		VK_ERR_RET("vkCreateFence", ret);
 		ret = vkCreateSemaphore(fb->vk.device, &semaphore_info, NULL, &frame->image_available);
-		VK_ERR_RET("vkCreateSemaphore", ret);
-		ret = vkCreateSemaphore(fb->vk.device, &semaphore_info, NULL, &frame->render_finished);
 		VK_ERR_RET("vkCreateSemaphore", ret);
 
 		// Create one timestamp pool for compute and blit boundaries when the queue supports it
@@ -761,6 +782,7 @@ int vk_drawq_run()
 	uint32_t image_index;
 	size_t dirty_start=0, dirty_end=0, dirty_size=0;
 	VkCommandBuffer command_buffer;
+	VkSemaphore render_finished;
 
 	// Skip zero-sized surfaces while a window is minimised
 	if (!fb->vk.initialised || fb->w<=0 || fb->h<=0)
@@ -793,6 +815,8 @@ int vk_drawq_run()
 		return 0;
 	if (ret==VK_SUBOPTIMAL_KHR)
 		fb->vk.swapchain_dirty=1;
+	// Select synchronization whose lifetime follows the acquired presentation image
+	render_finished=fb->vk.swapchain_render_finished[image_index];
 
 	// Align and clamp the accumulated packed-resource upload interval
 	if (fb->vk.dirty_start!=SIZE_MAX && fb->vk.dirty_end > fb->vk.dirty_start)
@@ -868,7 +892,7 @@ int vk_drawq_run()
 
 	// Let compute execute early while acquisition gates only the transfer stage
 	VkPipelineStageFlags wait_stage=VK_PIPELINE_STAGE_TRANSFER_BIT;
-	VkSubmitInfo submit_info = { .sType=VK_STRUCTURE_TYPE_SUBMIT_INFO, .waitSemaphoreCount=1, .pWaitSemaphores=&frame->image_available, .pWaitDstStageMask=&wait_stage, .commandBufferCount=1, .pCommandBuffers=&command_buffer, .signalSemaphoreCount=1, .pSignalSemaphores=&frame->render_finished };
+	VkSubmitInfo submit_info = { .sType=VK_STRUCTURE_TYPE_SUBMIT_INFO, .waitSemaphoreCount=1, .pWaitSemaphores=&frame->image_available, .pWaitDstStageMask=&wait_stage, .commandBufferCount=1, .pCommandBuffers=&command_buffer, .signalSemaphoreCount=1, .pSignalSemaphores=&render_finished };
 	ret=vkQueueSubmit(fb->vk.queue, 1, &submit_info, frame->fence);
 	if (ret!=VK_SUCCESS)
 		return 0;
@@ -882,7 +906,7 @@ int vk_drawq_run()
 	fb->timing[fb->timing_index].cl_enqueue_end=get_time_hr();
 
 	// Queue FIFO presentation and defer resize recovery until the next frame
-	VkPresentInfoKHR present_info = { .sType=VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, .waitSemaphoreCount=1, .pWaitSemaphores=&frame->render_finished, .swapchainCount=1, .pSwapchains=&fb->vk.swapchain, .pImageIndices=&image_index };
+	VkPresentInfoKHR present_info = { .sType=VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, .waitSemaphoreCount=1, .pWaitSemaphores=&render_finished, .swapchainCount=1, .pSwapchains=&fb->vk.swapchain, .pImageIndices=&image_index };
 	ret=vkQueuePresentKHR(fb->vk.queue, &present_info);
 	if (ret==VK_ERROR_OUT_OF_DATE_KHR || ret==VK_SUBOPTIMAL_KHR)
 		fb->vk.swapchain_dirty=1;
@@ -999,8 +1023,6 @@ void vk_deinit()
 				vkFreeMemory(fb->vk.device, frame->output_memory, NULL);
 			if (frame->image_available)
 				vkDestroySemaphore(fb->vk.device, frame->image_available, NULL);
-			if (frame->render_finished)
-				vkDestroySemaphore(fb->vk.device, frame->render_finished, NULL);
 			if (frame->fence)
 				vkDestroyFence(fb->vk.device, frame->fence, NULL);
 			if (frame->timestamp_pool)
